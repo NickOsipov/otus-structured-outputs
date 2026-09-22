@@ -1,0 +1,10 @@
+[project]
+name = "llm-dd-structured-outputs"
+version = "0.1.0"
+description = "Демо Structured Outputs с Yandex Cloud, OpenAI SDK и Pydantic"
+requires-python = "==3.12.8"
+dependencies = [
+    "openai==3.17.0",
+    "pydantic==2.13.5",
+    "python-dotenv==1.2.3",
+]
