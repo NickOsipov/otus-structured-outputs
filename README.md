@@ -2,7 +2,7 @@
 
 Cоберем небольшой классификатор обращений в поддержку. Модель YandexGPT должна вернуть категорию, приоритет, краткое описание и признак ручной проверки. Все запросы идут через официальный OpenAI SDK: YandexGPT совместим с OpenAI API, поэтому меняются только `base_url`, `project` и имя модели. План совпадает со слайдом «Практика» в `presentation.md`.
 
-Все команды выполняются из корня репозитория.
+Все команды выполняются из корня репозитория с активным виртуальным окружением.
 
 ## До занятия
 
@@ -38,7 +38,8 @@ YC_FOLDER_ID=<идентификатор каталога>
 YC_MODEL_URI=gpt://${YC_FOLDER_ID}/yandexgpt/latest
 YC_BASE_URL=https://ai.api.cloud.yandex.net/v1
 ```
-Откройте `yandex_client.py` и посмотрите функцию `build_client`. Это весь код подключения:
+
+Откройте `src/lib/llm_client.py` и посмотрите функцию `build_client`. Это весь код подключения:
 
 ```python
 OpenAI(
@@ -50,7 +51,7 @@ OpenAI(
 
 Без `base_url` и `project` тот же SDK отправит запрос в OpenAI, а не в Yandex Cloud.
 
-Откройте `models.py`. Класс `TicketClassification` является единым контрактом для Python-кода и модели. Обратите внимание на:
+Откройте `src/lib/models.py`. Класс `TicketClassification` является единым контрактом для Python-кода и модели. Обратите внимание на:
 
 - перечисления `TicketCategory` и `TicketPriority`
 - обязательные поля
@@ -63,7 +64,10 @@ OpenAI(
 python3 tests/test_show_schema.py
 ```
 
-Ожидаемо: в терминале появится JSON Schema с объектом `TicketClassification`, обязательными полями и `additionalProperties: false`.
+Ожидаемо: в терминале появится JSON Schema с объектом `TicketClassification`, обязательными полями и `additionalProperties: false`. 
+
+
+`additionalProperties: false` - запрет добавления новых полей в JSON Schema.
 
 ## 2. Увидеть проблемы свободного текста
 
@@ -84,8 +88,6 @@ python3 src/main/01_unstructured.py
 Если запрос завершился ошибкой `401` или `403`, проверьте API-ключ, роль сервисного аккаунта и значение `project`. При сетевой ошибке проверьте доступ к `https://ai.api.cloud.yandex.net`.
 
 ## 3. Сравнить JSON Object с проверкой Pydantic
-
-Время: 8 минут.
 
 Запустите запрос с `response_format={"type": "json_object"}`:
 
@@ -108,8 +110,6 @@ python3 src/main/02_json_object.py
 2. `TicketClassification.model_validate()` проверяет структуру и типы.
 
 ## 4. Получить ответ по JSON Schema
-
-Время: 10 минут.
 
 Запустите schema-constrained запрос:
 
@@ -143,16 +143,14 @@ python3 src/main/03_json_schema.py
 - `{"type": "json_object"}` гарантирует JSON, но не схему
 - `{"type": "json_schema", ...}` ограничивает структуру ответа заданным контрактом
 
-Посмотрите `build_response_format` в `yandex_client.py`: все три режима собираются в одной функции, а сам вызов `client.chat.completions.create` остается одинаковым.
+Посмотрите `build_response_format` в `llm_client.py`: все три режима собираются в одной функции, а сам вызов `client.chat.completions.create` остается одинаковым.
 
 ## 5. Проверить ошибки контракта без обращения к LLM
-
-Время: 9 минут.
 
 Запустите локальные примеры:
 
 ```bash
-uv run python validate_examples.py
+python3 tests/test_validate_examples.py
 ```
 
 Ожидаемо:
@@ -165,16 +163,14 @@ extra_field: контракт отклонен
 Итого: 1 принято, 3 отклонено
 ```
 
-Откройте `validate_examples.py` и по очереди исправьте один невалидный пример. Повторите запуск и убедитесь, что счетчики изменились.
+Откройте `tests/test_validate_examples.py` и по очереди исправьте один невалидный пример. Повторите запуск и убедитесь, что счетчики изменились.
 
-Обсудите, что Structured Outputs не проверяет:
+Обратите внимание, что Structured Outputs не проверяет:
 
 - истинность фактов в `summary`
 - соответствие категории внутренним правилам компании
 - допустимость автоматического действия для конкретного клиента
 - актуальность схемы у сервиса-получателя
-
-Для production-сценария добавьте версию контракта, таймаут, ограниченные повторы, метрики ошибок и маршрут на ручную проверку.
 
 ## Итог практики
 
