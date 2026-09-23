@@ -1,6 +1,6 @@
 """
 Module: llm_client
-Description: Вызывает YandexGPT через OpenAI SDK в трех режимах формата ответа.
+Description: Вызывает локальную модель Ollama через OpenAI SDK в трех режимах формата ответа.
 """
 
 from dataclasses import dataclass
@@ -9,20 +9,25 @@ from typing import Any
 
 from openai import OpenAI
 
-from config.variables import YC_API_KEY, YC_FOLDER_ID, YC_MODEL_URI, YC_BASE_URL
+from config.variables import OLLAMA_API_KEY, OLLAMA_BASE_URL, OLLAMA_MODEL
 
 SCHEMA_NAME = "ticket_classification"
 SYSTEM_PROMPT = (
     "Ты классифицируешь обращения в поддержку. "
     "Отвечай на русском языке и не добавляй факты, которых нет в обращении."
 )
+
 JSON_OBJECT_HINT = (
     " Верни только JSON-объект с полями category, priority, summary, "
     "requires_human. Допустимые category: billing, bug, feature, access, other. "
     "Допустимые priority: low, medium, high, critical."
 )
 
-
+# JSON_OBJECT_HINT = (
+#     " Верни только JSON-объект. Кроме category, priority, summary и "
+#     "requires_human добавь поля, которые помогут оператору: "
+#     "confidence от 0 до 1 и suggested_reply с черновиком ответа клиенту."
+# )
 class OutputMode(StrEnum):
     """Режим форматирования ответа модели."""
 
@@ -33,37 +38,32 @@ class OutputMode(StrEnum):
 
 @dataclass(frozen=True)
 class Settings:
-    """Настройки подключения к YandexGPT."""
+    """Настройки подключения к Ollama."""
 
     api_key: str
-    folder_id: str
-    model_uri: str
+    model: str
     base_url: str
 
 
 def load_settings() -> Settings:
     """Загрузить настройки из переменных окружения или файла .env."""
 
-    if not YC_API_KEY or not YC_FOLDER_ID:
-        raise RuntimeError("Заполните YC_API_KEY и YC_FOLDER_ID в файле .env")
-    model_uri = YC_MODEL_URI or f"gpt://{YC_FOLDER_ID}/yandexgpt-lite"
-    base_url = YC_BASE_URL or "https://api.openai.com/v1"
+    if not OLLAMA_BASE_URL or not OLLAMA_MODEL:
+        raise RuntimeError("Заполните OLLAMA_BASE_URL и OLLAMA_MODEL в файле .env")
 
     return Settings(
-        api_key=YC_API_KEY,
-        folder_id=YC_FOLDER_ID,
-        model_uri=model_uri,
-        base_url=base_url,
+        api_key=OLLAMA_API_KEY or "ollama",
+        model=OLLAMA_MODEL,
+        base_url=OLLAMA_BASE_URL,
     )
 
 
 def build_client(settings: Settings) -> OpenAI:
-    """Создать клиент OpenAI SDK, направленный в YandexGPT."""
+    """Создать клиент OpenAI SDK, направленный в локальный Ollama."""
     return OpenAI(
         api_key=settings.api_key,
         base_url=settings.base_url,
-        project=settings.folder_id,
-        timeout=30.0,
+        timeout=120.0,
     )
 
 
@@ -111,7 +111,7 @@ def generate(
         extra["response_format"] = response_format
 
     completion = client.chat.completions.create(
-        model=settings.model_uri,
+        model=settings.model,
         messages=build_messages(ticket, mode),
         temperature=0,
         max_tokens=500,

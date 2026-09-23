@@ -1,6 +1,6 @@
 """
 Module: variables
-Description: Загружает переменные окружения для подключения к YandexGPT.
+Description: Загружает переменные окружения для подключения к Ollama.
 """
 
 import os
@@ -13,7 +13,6 @@ TICKET = (
     "Верните, пожалуйста, лишний платеж как можно быстрее."
 )
 
-YC_API_KEY = os.getenv("YC_API_KEY", "")
-YC_FOLDER_ID = os.getenv("YC_FOLDER_ID", "")
-YC_MODEL_URI = os.getenv("YC_MODEL_URI", "")
-YC_BASE_URL = os.getenv("YC_BASE_URL", "")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "ollama")

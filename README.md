@@ -1,6 +1,6 @@
 # Практика: Structured Outputs
 
-Cоберем небольшой классификатор обращений в поддержку. Модель YandexGPT должна вернуть категорию, приоритет, краткое описание и признак ручной проверки. Все запросы идут через официальный OpenAI SDK: YandexGPT совместим с OpenAI API, поэтому меняются только `base_url`, `project` и имя модели. План совпадает со слайдом «Практика» в `presentation.md`.
+Соберём небольшой классификатор обращений в поддержку. Локальная модель `llama3.2:3b` в Ollama должна вернуть категорию, приоритет, краткое описание и признак ручной проверки. Все запросы идут через официальный OpenAI SDK: Ollama совместим с OpenAI API, поэтому меняются только `base_url` и имя модели. 
 
 Все команды выполняются из корня репозитория с активным виртуальным окружением.
 
@@ -8,13 +8,20 @@ Cоберем небольшой классификатор обращений �
 
 Понадобятся:
 
-- установленный `uv`
+- установленный [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Python 3.12.8, который `uv` может установить автоматически
-- каталог Yandex Cloud с активированным API YandexGPT
-- сервисный аккаунт с ролью `ai.languageModels.user`
-- API-ключ сервисного аккаунта
+- установленный [Ollama](https://ollama.com)
+- скачанная модель `llama3.2:3b`
+- запущенный сервер Ollama
 
-Секрет нельзя добавлять в git, показывать на слайдах или печатать в терминал.
+Скачайте модель и проверьте, что сервер отвечает:
+
+```bash
+ollama pull llama3.2:3b
+ollama list
+```
+
+Ключ API для облака не нужен. OpenAI SDK всё равно требует поле `api_key`, поэтому в `.env` стоит заглушка `ollama`: локальный сервер её не проверяет.
 
 ## 1. Подготовить окружение и контракт обращения в поддержку
 
@@ -30,13 +37,12 @@ uv sync
 cp .env.example .env
 ```
 
-Заполните `.env`:
+Заполните `.env` (значения по умолчанию уже подходят для локального Ollama):
 
 ```dotenv
-YC_API_KEY=<API-ключ сервисного аккаунта>
-YC_FOLDER_ID=<идентификатор каталога>
-YC_MODEL_URI=gpt://${YC_FOLDER_ID}/yandexgpt/latest
-YC_BASE_URL=https://ai.api.cloud.yandex.net/v1
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_MODEL=llama3.2:3b
+OLLAMA_API_KEY=ollama
 ```
 
 Откройте `src/lib/llm_client.py` и посмотрите функцию `build_client`. Это весь код подключения:
@@ -45,11 +51,10 @@ YC_BASE_URL=https://ai.api.cloud.yandex.net/v1
 OpenAI(
     api_key=settings.api_key,
     base_url=settings.base_url,
-    project=settings.folder_id,
 )
 ```
 
-Без `base_url` и `project` тот же SDK отправит запрос в OpenAI, а не в Yandex Cloud.
+Без `base_url` тот же SDK отправит запрос в OpenAI, а не в локальный Ollama.
 
 Откройте `src/lib/models.py`. Класс `TicketClassification` является единым контрактом для Python-кода и модели. Обратите внимание на:
 
@@ -64,8 +69,7 @@ OpenAI(
 python3 tests/test_show_schema.py
 ```
 
-Ожидаемо: в терминале появится JSON Schema с объектом `TicketClassification`, обязательными полями и `additionalProperties: false`. 
-
+Ожидаемо: в терминале появится JSON Schema с объектом `TicketClassification`, обязательными полями и `additionalProperties: false`.
 
 `additionalProperties: false` - запрет добавления новых полей в JSON Schema.
 
@@ -85,7 +89,7 @@ python3 src/main/01_unstructured.py
 - параметр `response_format` не передается, формат ответа ничем не ограничен
 - результат нельзя безопасно передать следующему сервису без разбора и проверки
 
-Если запрос завершился ошибкой `401` или `403`, проверьте API-ключ, роль сервисного аккаунта и значение `project`. При сетевой ошибке проверьте доступ к `https://ai.api.cloud.yandex.net`.
+Если запрос завершился ошибкой подключения, проверьте, что Ollama запущен (`ollama serve` или приложение Ollama) и доступен `http://localhost:11434`. Если модель не найдена, выполните `ollama pull llama3.2:3b`.
 
 ## 3. Сравнить JSON Object с проверкой Pydantic
 
@@ -95,12 +99,15 @@ python3 src/main/01_unstructured.py
 python3 src/main/02_json_object.py
 ```
 
-Ожидаемо: API вернет синтаксически корректный JSON. Затем скрипт попробует создать `TicketClassification`.
+Ожидаемо: API вернет синтаксически корректный JSON, но контракт Pydantic будет нарушен.
 
-Возможны два результата:
+В режиме `json_object` модели можно попросить «полезные» поля сверх схемы. В `JSON_OBJECT_HINT` намеренно добавлены `confidence` и `suggested_reply`. У `TicketClassification` стоит `extra="forbid"`, поэтому лишние ключи дают:
 
-- `Контракт пройден` - модель выбрала все поля и допустимые значения
-- `JSON валиден, контракт нарушен` - JSON разбирается, но тип, поле или значение не соответствует модели Pydantic
+```text
+JSON валиден, контракт нарушен
+```
+
+Другие способы сломать контракт при валидном JSON: неперечислимое значение (`category: "payment"`), пропущенное поле, слишком длинный `summary`. `response_format={"type": "json_object"}` ни одно из этого не запрещает.
 
 Главный вывод: JSON Object решает синтаксическую задачу, но не гарантирует прикладную схему.
 
@@ -122,7 +129,9 @@ python3 src/main/03_json_schema.py
 1. получает JSON Schema через `TicketClassification.model_json_schema()`
 2. передает ее в `response_format={"type": "json_schema", "json_schema": {...}}`
 3. получает JSON, ограниченный схемой на этапе генерации
-4. повторно валидирует ответ через Pydantic
+4. разбирает его через `json.loads()` и повторно валидирует через Pydantic
+
+Границы те же, что в `02_json_object.py`: синтаксис JSON и прикладной контракт проверяются отдельно. Schema-constrained генерация снижает шанс ошибки, но не заменяет локальную валидацию. Если контракт нарушен, скрипт печатает `JSON валиден, контракт нарушен`, а не падает на необработанном исключении.
 
 Ожидаемый ответ имеет такой вид:
 
